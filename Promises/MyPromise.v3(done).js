@@ -3,19 +3,20 @@ function MyPromise () {
     if(typeof promiseCallback !== 'function') {
       throw new Error('Resolver undefined is not a function')
     }
+    
     this.PromiseStatus = 'pending'
     this.PromiseValue
   
     let unRejectedErr = false
     let thenableQueue = []
-    let isExecutedResolve = false
-    let isExecutedReject = false
-    let firstValue
+    let qmResolveIsRunning = false
+    let qmRejectIsRunning = false
+    let firstExecValue
   
     const resolve = function(value) {
       queueMicrotask(() => {
-        isExecutedResolve = true
-        this.PromiseValue = firstValue = value
+        qmResolveIsRunning = true
+        this.PromiseValue = firstExecValue = value
         this.PromiseStatus = 'resolved'
         if(thenableQueue.length === 0) return
         onThenableResolve(thenableQueue)
@@ -25,9 +26,9 @@ function MyPromise () {
     const reject = function(value) {
       queueMicrotask(() => {
         unRejectedErr = true
-        isExecutedReject = true
+        qmRejectIsRunning = true
         this.PromiseStatus = 'rejected'
-        this.PromiseValue = firstValue = value
+        this.PromiseValue = firstExecValue = value
         onThenableReject(thenableQueue)
         onThenableResolve(thenableQueue)
         if(unRejectedErr) {
@@ -76,27 +77,27 @@ function MyPromise () {
       let onResolve, onReject
       if((onResolve = arguments[0])) thenableQueue.push({then: onResolve})
       if((onReject = arguments[1])) thenableQueue.push({catch: onReject})
-      if(isExecutedResolve) {
-        resolve(firstValue)
-        isExecutedResolve = false
+      if(qmResolveIsRunning) {
+        resolve(firstExecValue)
+        qmResolveIsRunning = false
       }
       return this
     }
     MyPromise.prototype.catch = function() {
       let onReject
       if((onReject = arguments[0])) thenableQueue.push({catch: onReject})
-      if(isExecutedReject) {
-        reject(firstValue)
-        isExecutedReject = false
+      if(qmRejectIsRunning) {
+        reject(firstExecValue)
+        qmRejectIsRunning = false
       }
       return this
     }
     MyPromise.prototype.finally = function() {
       let onFinally
       if((onFinally = arguments[0])) thenableQueue.push({finally: onFinally})
-      if(isExecutedResolve) {
-        resolve(firstValue)
-        isExecutedResolve = false
+      if(qmResolveIsRunning) {
+        resolve(firstExecValue)
+        qmResolveIsRunning = false
       }
       return this
     }
