@@ -8,13 +8,12 @@ function MyPromise () {
   
     let unRejectedErr = false
     let thenableQueue = []
-    let isExecutedResolve = false
-    let isExecutedReject = false
+    let qmIsRunning = false
     let firstValue
   
     const resolve = function(value) {
       queueMicrotask(() => {
-        isExecutedResolve = true
+        qmIsRunning = true
         this.PromiseValue = firstValue = value
         this.PromiseStatus = 'resolved'
         if(thenableQueue.length === 0) return
@@ -25,7 +24,7 @@ function MyPromise () {
     const reject = function(value) {
       queueMicrotask(() => {
         unRejectedErr = true
-        isExecutedReject = true
+        qmIsRunning = true
         this.PromiseStatus = 'rejected'
         this.PromiseValue = firstValue = value
         onThenableReject(thenableQueue)
@@ -76,27 +75,27 @@ function MyPromise () {
       let onResolve, onReject
       if((onResolve = arguments[0])) thenableQueue.push({then: onResolve})
       if((onReject = arguments[1])) thenableQueue.push({catch: onReject})
-      if(isExecutedResolve) {
+      if(qmIsRunning) {
         resolve(firstValue)
-        isExecutedResolve = false
+        qmIsRunning = false
       }
       return this
     }
     MyPromise.prototype.catch = function() {
       let onReject
       if((onReject = arguments[0])) thenableQueue.push({catch: onReject})
-      if(isExecutedReject) {
+      if(qmIsRunning) {
         reject(firstValue)
-        isExecutedReject = false
+        qmIsRunning = false
       }
       return this
     }
     MyPromise.prototype.finally = function() {
       let onFinally
       if((onFinally = arguments[0])) thenableQueue.push({finally: onFinally})
-      if(isExecutedResolve) {
+      if(qmIsRunning) {
         resolve(firstValue)
-        isExecutedResolve = false
+        qmIsRunning = false
       }
       return this
     }
