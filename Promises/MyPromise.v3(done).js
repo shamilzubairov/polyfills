@@ -13,40 +13,39 @@ function MyPromise () {
     let firstValue
   
     const resolve = function(value) {
-      isExecutedResolve = true
-      if(thenableQueue.length === 0) {
-        firstValue = value
-        return
-      }
-      this.PromiseStatus = 'resolved'
-      this.PromiseValue = firstValue = value
-      onThenableResolve(thenableQueue)
+      queueMicrotask(() => {
+        isExecutedResolve = true
+        this.PromiseValue = firstValue = value
+        this.PromiseStatus = 'resolved'
+        if(thenableQueue.length === 0) return
+        onThenableResolve(thenableQueue)
+      })
     }.bind(this)
     
     const reject = function(value) {
-      if(this.PromiseStatus === 'pending') {
-        this.PromiseStatus = 'rejected'
-        this.PromiseValue = value
+      queueMicrotask(() => {
         unRejectedErr = true
+        isExecutedReject = true
+        this.PromiseStatus = 'rejected'
+        this.PromiseValue = firstValue = value
         onThenableReject(thenableQueue)
         onThenableResolve(thenableQueue)
         if(unRejectedErr) {
           throw new Error(this.PromiseValue)
         }
-      }
+      })
     }.bind(this)
   
     const onThenableResolve = function(thenableQueue) {
       while(thenableQueue.length) {
-        let thenableObj = thenableQueue.shift()
-        while(!thenableObj.hasOwnProperty('then')) {
-          if(thenableObj.hasOwnProperty('finally')) thenableObj.finally()
-          if(thenableQueue.length === 0) return
-          thenableObj = thenableQueue.shift()
-        }
         try {
+          let thenableObj = thenableQueue.shift()
+          while(!thenableObj.hasOwnProperty('then')) {
+            if(thenableObj.hasOwnProperty('finally')) thenableObj.finally()
+            if(thenableQueue.length === 0) return
+            thenableObj = thenableQueue.shift()
+          }
           this.PromiseValue = thenableObj.then(this.PromiseValue)
-          if(thenableObj.hasOwnProperty('finally')) thenableObj.finally()
         } catch(e) {
           this.PromiseValue = e
           onThenableReject(thenableQueue)
@@ -55,7 +54,10 @@ function MyPromise () {
     }.bind(this)
   
     const onThenableReject = function(thenableQueue) {
-      if(thenableQueue.length === 0) return
+      if(thenableQueue.length === 0) {
+        this.PromiseStatus = 'rejected'
+        throw new Error(this.PromiseValue)
+      }
       let thenableObj = thenableQueue.shift()
       while(!thenableObj.hasOwnProperty('catch')) {
         if(thenableObj.hasOwnProperty('finally')) thenableObj.finally()
@@ -71,35 +73,40 @@ function MyPromise () {
     }.bind(this)
   
     MyPromise.prototype.then = function() {
-      if(isExecutedResolve) {
-        queueMicrotask(() => {
-          resolve(firstValue)
-        })
-      }
       let onResolve, onReject
       if((onResolve = arguments[0])) thenableQueue.push({then: onResolve})
       if((onReject = arguments[1])) thenableQueue.push({catch: onReject})
+      if(isExecutedResolve) {
+        resolve(firstValue)
+        isExecutedResolve = false
+      }
       return this
     }
     MyPromise.prototype.catch = function() {
       let onReject
       if((onReject = arguments[0])) thenableQueue.push({catch: onReject})
+      if(isExecutedReject) {
+        reject(firstValue)
+        isExecutedReject = false
+      }
       return this
     }
     MyPromise.prototype.finally = function() {
       let onFinally
       if((onFinally = arguments[0])) thenableQueue.push({finally: onFinally})
+      if(isExecutedResolve) {
+        resolve(firstValue)
+        isExecutedResolve = false
+      }
       return this
     }
     MyPromise.prototype[Symbol.toStringTag] = 'MyPromise'
   
-    queueMicrotask(() => {
-      try {
-        promiseCallback(resolve, reject)
-      } catch(e) {
-        this.PromiseValue = e
-        reject(this.PromiseValue)
-      }
-    })
+    try {
+      promiseCallback(resolve, reject)
+    } catch(e) {
+      this.PromiseValue = e
+      reject(this.PromiseValue)
+    }
   
   }
