@@ -7,7 +7,7 @@ function MyPromise () {
   this.PromiseStatus = 'pending'
   this.PromiseValue
 
-  let unRejectedErr = false
+  let unRejectedErr = true
   let thenableQueue = []
   let qmResolveIsRunning = false
   let qmRejectIsRunning = false
@@ -15,9 +15,11 @@ function MyPromise () {
 
   const resolve = function(value) {
     queueMicrotask(() => {
-      qmResolveIsRunning = true
-      this.PromiseValue = firstExecValue = value
-      this.PromiseStatus = 'resolved'
+      if(!firstExecValue) {
+        qmResolveIsRunning = true
+        this.PromiseValue = firstExecValue = value
+        this.PromiseStatus = 'resolved'
+      }
       if(thenableQueue.length === 0) return
       onThenableResolve(thenableQueue)
     })
@@ -25,21 +27,22 @@ function MyPromise () {
   
   const reject = function(value) {
     queueMicrotask(() => {
-      unRejectedErr = true
-      qmRejectIsRunning = true
-      this.PromiseStatus = 'rejected'
-      this.PromiseValue = firstExecValue = value
-      onThenableReject(thenableQueue)
-      onThenableResolve(thenableQueue)
-      if(unRejectedErr) {
+      if(!firstExecValue) {
+        qmRejectIsRunning = true
+        this.PromiseStatus = 'rejected'
+        this.PromiseValue = firstExecValue = value
+      }
+      if(unRejectedErr || thenableQueue.length === 0) {
         throw new Error(this.PromiseValue)
       }
+      onThenableReject(thenableQueue)
+      onThenableResolve(thenableQueue)
     })
   }.bind(this)
 
   const onThenableResolve = function(thenableQueue) {
-    while(thenableQueue.length) {
-      try {
+    try {
+      while(thenableQueue.length) {
         let thenableObj = thenableQueue.shift()
         while(!thenableObj.hasOwnProperty('then')) {
           if(thenableObj.hasOwnProperty('finally')) thenableObj.finally()
@@ -47,36 +50,44 @@ function MyPromise () {
           thenableObj = thenableQueue.shift()
         }
         this.PromiseValue = thenableObj.then(this.PromiseValue)
-      } catch(e) {
-        this.PromiseValue = e
-        onThenableReject(thenableQueue)
       }
+    } catch(e) {
+      this.PromiseValue = e
+      onThenableReject(thenableQueue)
     }
   }.bind(this)
 
   const onThenableReject = function(thenableQueue) {
-    if(thenableQueue.length === 0) {
-      this.PromiseStatus = 'rejected'
-      throw new Error(this.PromiseValue)
-    }
-    let thenableObj = thenableQueue.shift()
-    while(!thenableObj.hasOwnProperty('catch')) {
-      if(thenableObj.hasOwnProperty('finally')) thenableObj.finally()
+    try {
       if(thenableQueue.length === 0) {
         this.PromiseStatus = 'rejected'
         throw new Error(this.PromiseValue)
       }
-      thenableObj = thenableQueue.shift()
+      let thenableObj = thenableQueue.shift()
+      while(!thenableObj.hasOwnProperty('catch')) {
+        if(thenableObj.hasOwnProperty('finally')) thenableObj.finally()
+        if(thenableQueue.length === 0) {
+          this.PromiseStatus = 'rejected'
+          throw new Error(this.PromiseValue)
+        }
+        thenableObj = thenableQueue.shift()
+      }
+      this.PromiseValue = thenableObj.catch(this.PromiseValue)
+      this.PromiseStatus = 'resolved'
+    } catch(e) {
+      this.PromiseValue = e
+      onThenableReject(thenableQueue)
     }
-    this.PromiseValue = thenableObj.catch(this.PromiseValue)
-    this.PromiseStatus = 'resolved'
-    unRejectedErr = false
   }.bind(this)
 
   MyPromise.prototype.then = function() {
     let onResolve, onReject
-    if((onResolve = arguments[0])) thenableQueue.push({then: onResolve})
-    if((onReject = arguments[1])) thenableQueue.push({catch: onReject})
+    if((onResolve = arguments[0])) {
+      thenableQueue.push({then: onResolve})
+    }
+    if((onReject = arguments[1])) {
+      thenableQueue.push({catch: onReject})
+    }
     if(qmResolveIsRunning) {
       resolve(firstExecValue)
       qmResolveIsRunning = false
@@ -85,7 +96,10 @@ function MyPromise () {
   }
   MyPromise.prototype.catch = function() {
     let onReject
-    if((onReject = arguments[0])) thenableQueue.push({catch: onReject})
+    if((onReject = arguments[0])) {
+      thenableQueue.push({catch: onReject})
+      unRejectedErr = false
+    }
     if(qmRejectIsRunning) {
       reject(firstExecValue)
       qmRejectIsRunning = false
@@ -109,5 +123,4 @@ function MyPromise () {
     this.PromiseValue = e
     reject(this.PromiseValue)
   }
-
 }
